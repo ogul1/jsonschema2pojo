@@ -1,0 +1,61 @@
+
+name: Modified Android Sample
+jobs:
+  buildTest:
+    name: buildTest (${{ matrix.java_version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java_version:
+        - 8
+    steps:
+    - name: Setup Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |-
+        python -m pip install --upgrade pip
+        pip install inotify
+    - name: Run inotifywait
+      run: |-
+        python3 -c "
+        import inotify.adapters
+        import inotify.constants
+        import os
+        from datetime import datetime, timezone
+        with open('/home/runner/inotifywait-log-buildTest (${{ matrix.java_version }}).csv', 'w') as log_file:
+          i = inotify.adapters.InotifyTree('/home/runner/work/jsonschema2pojo/jsonschema2pojo', inotify.constants.IN_CREATE | inotify.constants.IN_ACCESS)
+          for event in i.event_gen(yield_nones=False):
+            (_, type_names, path, filename) = event
+            now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+            events = ','.join(type_names)
+            log_file.write(f'{now};{path};{filename};{events}\n')
+            log_file.flush()
+            os.fsync(log_file.fileno())
+        " &
+    - name: Setup Maven Action
+      uses: s4u/setup-maven-action@v1.14.0
+      with:
+        checkout-fetch-depth: 0
+        java-version: ${{ matrix.java_version }}
+        java-distribution: temurin
+        maven-version: 3.8.7
+    - run: touch optcd-3.txt
+    - name: Install Android SDK
+      uses: malinskiy/action-android/install-sdk@release/0.1.1
+    - run: touch optcd-4.txt
+    - name: Install latest jsonschema2pojo SNAPSHOT
+      run: mvn -U -B install -DskipTests -Dmaven.javadoc.skip -Dmaven.site.skip
+    - run: touch optcd-5.txt
+    - name: Build projects
+      run: cd jsonschema2pojo-gradle-plugin/example/android && ./gradlew --info assembleDebug
+    - run: touch optcd-6.txt
+    - name: Upload inotifywait logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: inotifywait-buildTest (${{ matrix.java_version }})
+        path: /home/runner/inotifywait-log-buildTest (${{ matrix.java_version }}).csv
+'on':
+- push
+- workflow_dispatch
